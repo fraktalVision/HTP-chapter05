@@ -38,10 +38,12 @@ public class MainActivity extends Activity
       // set default values in the app's SharedPreferences
       PreferenceManager.setDefaultValues(this, R.xml.preferences, false);
 
-      // register listener for SharedPreferences changes
-      PreferenceManager.getDefaultSharedPreferences(this).
-         registerOnSharedPreferenceChangeListener(
-            preferenceChangeListener);
+      if (savedInstanceState == null) {
+         // register listener for SharedPreferences changes
+         PreferenceManager.getDefaultSharedPreferences(this).
+                 registerOnSharedPreferenceChangeListener(
+                         preferenceChangeListener);
+      }
 
       // determine screen size 
       int screenSize = getResources().getConfiguration().screenLayout &
@@ -132,7 +134,7 @@ public class MainActivity extends Activity
             Set<String> regions = 
                sharedPreferences.getStringSet(REGIONS, null);
             
-            if (regions != null && regions.size() > 0)
+            if (regions != null && regions.size() > 0 && quizFragment != null)
             {
                quizFragment.updateRegions(sharedPreferences);
                quizFragment.resetQuiz();
