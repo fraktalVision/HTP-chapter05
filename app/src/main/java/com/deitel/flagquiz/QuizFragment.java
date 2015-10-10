@@ -43,12 +43,18 @@ public class QuizFragment extends Fragment
    private List<String> quizCountriesList; // countries in current quiz
    private Set<String> regionsSet; // world regions in current quiz
    private String correctAnswer; // correct country for the current flag
+   private boolean firstGuess; // bool to determine if the guess is the first guess made
+   private int firstGuesses; // number of correct guesses on first try
+   private int capitalIdx; // index of correct capital answer
+   private int score; // separate integer for holding the score
    private int totalGuesses; // number of guesses made
    private int correctAnswers; // number of correct guesses
    private int guessRows; // number of rows displaying guess Buttons
    private SecureRandom random; // used to randomize the quiz
    private Handler handler; // used to delay loading next flag
    private Animation shakeAnimation; // animation for incorrect guess
+
+   private String[] capitals; // CharSequence of capital names for capital question
    
    private TextView questionNumberTextView; // shows current question #
    private ImageView flagImageView; // displays a flag
@@ -67,7 +73,7 @@ public class QuizFragment extends Fragment
       fileNameList = new ArrayList<String>();
       quizCountriesList = new ArrayList<String>();
       random = new SecureRandom(); 
-      handler = new Handler(); 
+      handler = new Handler();
 
       // load the shake animation that's used for incorrect answers
       shakeAnimation = AnimationUtils.loadAnimation(getActivity(), 
@@ -150,10 +156,13 @@ public class QuizFragment extends Fragment
       {
          Log.e(TAG, "Error loading image file names", exception);
       } 
-      
+
+      firstGuesses = 0; // resets number of correct answers on first try
       correctAnswers = 0; // reset the number of correct answers made
+      score = 0; // reset score
       totalGuesses = 0; // reset the total number of guesses the user made
       quizCountriesList.clear(); // clear prior list of quiz countries
+      capitals = new String[3];
       
       int flagCounter = 1; 
       int numberOfFlags = fileNameList.size(); 
@@ -183,7 +192,8 @@ public class QuizFragment extends Fragment
       // get file name of the next flag and remove it from the list
       String nextImage = quizCountriesList.remove(0);
       correctAnswer = nextImage; // update the correct answer
-      answerTextView.setText(""); // clear answerTextView 
+      answerTextView.setText(""); // clear answerTextView
+      firstGuess = true;
 
       // display current question number
       questionNumberTextView.setText(
@@ -232,6 +242,7 @@ public class QuizFragment extends Fragment
             // get country name and set it as newGuessButton's text
             String fileName = fileNameList.get((row * 3) + column);
             newGuessButton.setText(getCountryName(fileName));
+            capitals[column] = getCapitalName(fileName);
          } 
       } 
       
@@ -240,17 +251,25 @@ public class QuizFragment extends Fragment
       int column = random.nextInt(3); // pick random column
       LinearLayout randomRow = guessLinearLayouts[row]; // get the row
       String countryName = getCountryName(correctAnswer);
-      ((Button) randomRow.getChildAt(column)).setText(countryName);    
+      ((Button) randomRow.getChildAt(column)).setText(countryName);
+
+      // randomly replace one capital with the correct answer
+      capitalIdx = random.nextInt(3); // pick random index
+      capitals[capitalIdx] = getCapitalName(correctAnswer);
    } // end method loadNextFlag
 
    // parses the country flag file name and returns the country name
    private String getCountryName(String name)
    {
-      return name.substring(name.indexOf('-') + 1).replace('_', ' ');
-   } 
+      return name.substring(name.indexOf('-') + 1, name.indexOf('=')).replace('_', ' ');
+   }
+
+   private String getCapitalName(String name) {
+      return name.substring(name.indexOf('=') + 1).replace('_', ' ');
+   }
    
    // called when a guess Button is touched
-   private OnClickListener guessButtonListener = new OnClickListener() 
+   protected OnClickListener guessButtonListener = new OnClickListener()
    {
       @Override
       public void onClick(View v) 
@@ -263,55 +282,89 @@ public class QuizFragment extends Fragment
          if (guess.equals(answer)) // if the guess is correct
          {
             ++correctAnswers; // increment the number of correct answers
+            ++score; // increment score
+            if (firstGuess)
+               ++firstGuesses;
 
             // display correct answer in green text
             answerTextView.setText(answer + "!");
             answerTextView.setTextColor(
-               getResources().getColor(R.color.correct_answer));
+                    getResources().getColor(R.color.correct_answer));
+
+            DialogFragment capitalQuestion =
+                    new DialogFragment() {
+
+                       // create capital question dialog
+                       @Override
+                       public Dialog onCreateDialog(Bundle bundle) {
+                          AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+                          builder.setTitle(getResources().getString(R.string.capital_question, getCountryName(correctAnswer)));
+                          builder.setItems(capitals, new DialogInterface.OnClickListener() {
+                             public void onClick(DialogInterface dialog, int choice) {
+                                if (choice == capitalIdx) {
+                                   answerTextView.setText("Correct! " + getCapitalName(correctAnswer) + " is the capital!");
+                                   answerTextView.setTextColor(getResources().getColor(R.color.correct_answer));
+                                   score += 10; // add 10 points to total score
+                                } else {
+                                   answerTextView.setText("Incorrect!");
+                                   answerTextView.setTextColor(getResources().getColor(R.color.incorrect_answer));
+                                }
+                             }
+                          });
+
+                          return builder.create();
+                       }
+                    };
+          capitalQuestion.show(getFragmentManager(), "");
 
             disableButtons(); // disable all guess Buttons
             
             // if the user has correctly identified FLAGS_IN_QUIZ flags
             if (correctAnswers == FLAGS_IN_QUIZ) 
             {
-               // DialogFragment to display quiz stats and start new quiz
-               DialogFragment quizResults = 
-                  new DialogFragment()
-                  {
-                     // create an AlertDialog and return it
-                     @Override
-                     public Dialog onCreateDialog(Bundle bundle)
-                     {
-                        AlertDialog.Builder builder = 
-                           new AlertDialog.Builder(getActivity());
-                        builder.setCancelable(false); 
-                        
-                        builder.setMessage(
-                           getResources().getString(R.string.results, 
-                           totalGuesses, (1000 / (double) totalGuesses)));
-                        
-                        // "Reset Quiz" Button                              
-                        builder.setPositiveButton(R.string.reset_quiz,
-                           new DialogInterface.OnClickListener()                
-                           {                                                       
-                              public void onClick(DialogInterface dialog, 
-                                 int id) 
-                              {
-                                 resetQuiz();                                      
-                              } 
-                           } // end anonymous inner class
-                        ); // end call to setPositiveButton
-                        
-                        return builder.create(); // return the AlertDialog
-                     } // end method onCreateDialog   
-                  }; // end DialogFragment anonymous inner class
+               handler.postDelayed(new Runnable() {
+                  public void run() {
+                     // DialogFragment to display quiz stats and start new quiz
+                     DialogFragment quizResults =
+                             new DialogFragment() {
+                                // create an AlertDialog and return it
+                                @Override
+                                public Dialog onCreateDialog(Bundle bundle) {
+                                   AlertDialog.Builder builder =
+                                           new AlertDialog.Builder(getActivity());
+                                   builder.setCancelable(false);
+
+                                   builder.setMessage(
+                                           getResources().getString(
+                                                   R.string.results,
+                                                   totalGuesses,
+                                                   (1000 / (double) totalGuesses),
+                                                   score,
+                                                   firstGuesses,
+                                                   (((double) firstGuesses) / ((double) totalGuesses) * 100)));
+
+                                   // "Reset Quiz" Button
+                                   builder.setPositiveButton(R.string.reset_quiz,
+                                           new DialogInterface.OnClickListener() {
+                                              public void onClick(DialogInterface dialog,
+                                                                  int id) {
+                                                 resetQuiz();
+                                              }
+                                           } // end anonymous inner class
+                                   ); // end call to setPositiveButton
+
+                                   return builder.create(); // return the AlertDialog
+                                } // end method onCreateDialog
+                             }; // end DialogFragment anonymous inner class
+                     // use FragmentManager to display the DialogFragment
+                     quizResults.show(getFragmentManager(), "quiz results");
+                  }
+               }, 7000);
                
-               // use FragmentManager to display the DialogFragment
-               quizResults.show(getFragmentManager(), "quiz results");
-            } 
+            }
             else // answer is correct but quiz is not over 
             {
-               // load the next flag after a 1-second delay
+               // load the next flag after a 7-second delay
                handler.postDelayed(
                   new Runnable()
                   { 
@@ -320,11 +373,12 @@ public class QuizFragment extends Fragment
                      {
                         loadNextFlag();
                      }
-                  }, 2000); // 2000 milliseconds for 2-second delay
+                  }, 7000); // 7000 milliseconds for 7-second delay
             } 
          } 
          else // guess was incorrect  
          {
+            firstGuess = false;
             flagImageView.startAnimation(shakeAnimation); // play shake
 
             // display "Incorrect!" in red 
